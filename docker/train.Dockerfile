@@ -13,7 +13,11 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements-train.txt /tmp/requirements-train.txt
-RUN pip install --no-cache-dir -r /tmp/requirements-train.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-train.txt \
+ && find /opt/venv -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+ && find /opt/venv -path '*/torch/test*' -exec rm -rf {} + 2>/dev/null || true \
+ && find /opt/venv -path '*/caffe2/test*' -exec rm -rf {} + 2>/dev/null || true \
+ && find /opt/venv -name '*.dist-info' -exec rm -rf {} + 2>/dev/null || true
 
 
 FROM python:3.11-slim
