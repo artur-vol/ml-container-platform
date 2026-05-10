@@ -1,0 +1,68 @@
+# values.yaml — k3d local (MacBook M1, arm64)
+#
+# Quick local test (no ingress controller needed):
+#   k3d cluster create thesis
+#   k3d image import ml-platform/serve:latest -c thesis
+#   helm install ml-platform helm/ml-platform -f helm/ml-platform/values.yaml
+#   kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=ml-platform --timeout=180s
+#   kubectl port-forward svc/ml-platform 8000:80
+#   curl http://localhost:8000/health
+#
+# Optional: enable real Ingress in k3d (Traefik-disabled + nginx):
+#   k3d cluster delete thesis
+#   k3d cluster create thesis --k3s-arg "--disable=traefik@server:0" -p "8080:80@loadbalancer"
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.1/deploy/static/provider/cloud/deploy.yaml
+#   kubectl wait --namespace ingress-nginx --for=condition=ready pod \
+#     --selector=app.kubernetes.io/component=controller --timeout=180s
+#   curl http://localhost:8080/health -H "Host: ml-platform.local"
+
+replicaCount: 1
+
+image:
+  repository: ml-platform/serve
+  tag: latest
+  # Never = use image imported via k3d image import (no registry pull)
+  pullPolicy: Never
+  pullSecret: ""
+
+mlflow:
+  # MLflow runs on the host Mac. k3d injects "host.k3d.internal" into CoreDNS,
+  # which resolves to the host machine from inside cluster pods.
+  trackingUri: "http://host.k3d.internal:5000"
+
+model:
+  name: cifar10-mobilenet
+  stage: Production
+
+logLevel: INFO
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ml-platform.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    # model loads from MLflow at startup — allow up to 90s before first check
+    initialDelaySeconds: 90
+    periodSeconds: 15
+  readiness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+gpu:
+  enabled: false

@@ -1,0 +1,22 @@
+# venv & python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# data, model artifacts, mlflow state
+data/
+mlruns/
+mlartifacts/
+*.pt
+*.pth
+
+# tests scratch
+tests/test_image.jpg
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+!docs/thesis/
