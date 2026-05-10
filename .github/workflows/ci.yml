@@ -1,10 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 env:
@@ -52,7 +48,7 @@ jobs:
 
       - name: Set up Python venv
         run: |
-          python3.11 -m venv .venv
+          python3 -m venv .venv
           .venv/bin/pip install --quiet mlflow==2.17.2 requests pytest pillow
 
       - name: Start MLflow
@@ -100,7 +96,7 @@ jobs:
             .venv/bin/pytest tests/smoke_test.py -v
 
       - name: Push images to ghcr.io
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main'
         run: |
           docker push ${{ env.TRAIN_IMAGE }}:${{ github.sha }}
           docker push ${{ env.TRAIN_IMAGE }}:latest
