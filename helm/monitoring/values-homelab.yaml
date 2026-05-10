@@ -13,13 +13,18 @@ kube-prometheus-stack:
           memory: 400Mi
 
   grafana:
+    # Grafana 13 unified apiserver needs more RAM; disable unused default plugins
+    plugins: []
+    service:
+      type: NodePort
+      nodePort: 30300
     resources:
       requests:
         cpu: 50m
-        memory: 80Mi
-      limits:
-        cpu: 200m
         memory: 150Mi
+      limits:
+        cpu: 500m
+        memory: 768Mi
 
   alertmanager:
     alertmanagerSpec:
