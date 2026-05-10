@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  TRAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/ml-container-platform-train
+  SERVE_IMAGE: ghcr.io/${{ github.repository_owner }}/ml-container-platform-serve
+  MLFLOW_PORT: 5000
+  SERVE_PORT: 8000
+
+jobs:
+  build-and-test:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pre-clean leftover containers and ports
+        run: |
+          docker rm -f ci-serve 2>/dev/null || true
+          fuser -k ${{ env.MLFLOW_PORT }}/tcp 2>/dev/null || true
+          fuser -k ${{ env.SERVE_PORT }}/tcp 2>/dev/null || true
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build train image
+        run: |
+          docker build \
+            -f docker/train.Dockerfile \
+            -t ${{ env.TRAIN_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.TRAIN_IMAGE }}:latest \
+            .
+
+      - name: Build serve image
+        run: |
+          docker build \
+            -f docker/serve.Dockerfile \
+            -t ${{ env.SERVE_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.SERVE_IMAGE }}:latest \
+            .
+
+      - name: Set up Python venv
+        run: |
+          python3.11 -m venv .venv
+          .venv/bin/pip install --quiet mlflow==2.17.2 requests pytest pillow
+
+      - name: Start MLflow
+        run: |
+          mkdir -p mlruns/artifacts
+          nohup .venv/bin/mlflow server \
+            --backend-store-uri sqlite:///$(pwd)/mlruns/mlflow.db \
+            --artifacts-destination $(pwd)/mlruns/artifacts \
+            --host 127.0.0.1 --port ${{ env.MLFLOW_PORT }} \
+            > mlruns/mlflow.log 2>&1 &
+          echo $! > mlruns/mlflow.pid
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:${{ env.MLFLOW_PORT }}/health && break || sleep 2
+          done
+
+      - name: Train quick model (in container)
+        run: |
+          docker run --rm \
+            --network host \
+            -e MLFLOW_TRACKING_URI=http://127.0.0.1:${{ env.MLFLOW_PORT }} \
+            -e CIFAR_DATA_DIR=/data \
+            -v /tmp/cifar-ci:/data \
+            ${{ env.TRAIN_IMAGE }}:latest \
+            --epochs 1 --subset 500 --tracking-uri http://127.0.0.1:${{ env.MLFLOW_PORT }}
+
+      - name: Promote model to Production
+        run: |
+          MLFLOW_TRACKING_URI=http://127.0.0.1:${{ env.MLFLOW_PORT }} \
+            .venv/bin/python scripts/promote.py
+
+      - name: Start serve container
+        run: |
+          docker run -d \
+            --name ci-serve \
+            --network host \
+            -e MLFLOW_TRACKING_URI=http://127.0.0.1:${{ env.MLFLOW_PORT }} \
+            ${{ env.SERVE_IMAGE }}:latest
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:${{ env.SERVE_PORT }}/health && break || sleep 2
+          done
+
+      - name: Run smoke tests
+        run: |
+          SERVE_URL=http://127.0.0.1:${{ env.SERVE_PORT }} \
+            .venv/bin/pytest tests/smoke_test.py -v
+
+      - name: Push images to ghcr.io
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          docker push ${{ env.TRAIN_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.TRAIN_IMAGE }}:latest
+          docker push ${{ env.SERVE_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.SERVE_IMAGE }}:latest
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f ci-serve 2>/dev/null || true
+          if [[ -f mlruns/mlflow.pid ]]; then
+            kill "$(cat mlruns/mlflow.pid)" 2>/dev/null || true
+            rm -f mlruns/mlflow.pid
+          fi
+          docker rmi ${{ env.TRAIN_IMAGE }}:${{ github.sha }} \
+                      ${{ env.SERVE_IMAGE }}:${{ github.sha }} 2>/dev/null || true
