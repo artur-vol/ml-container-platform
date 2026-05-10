@@ -20,3 +20,7 @@ tests/test_image.jpg
 .vscode/
 
 !docs/thesis/
+
+# AI
+AGENTS.md
+CLAUDE.md
