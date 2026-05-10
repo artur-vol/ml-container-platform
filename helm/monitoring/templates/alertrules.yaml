@@ -20,7 +20,7 @@ spec:
             severity: warning
           annotations:
             summary: "p95 predict latency > 1s"
-            description: "p95 latency is {{ $value | humanizeDuration }} — model may be overloaded"
+            description: "p95 latency is {{`{{ $value | humanizeDuration }}`}} — model may be overloaded"
 
         - alert: HighPredictLatencyP99
           expr: |
@@ -32,7 +32,7 @@ spec:
             severity: critical
           annotations:
             summary: "p99 predict latency > 3s"
-            description: "p99 latency is {{ $value | humanizeDuration }}"
+            description: "p99 latency is {{`{{ $value | humanizeDuration }}`}}"
 
     - name: ml-platform.errors
       rules:
@@ -47,7 +47,7 @@ spec:
             severity: warning
           annotations:
             summary: "Predict error rate > 5%"
-            description: "Error rate is {{ $value | humanizePercentage }}"
+            description: "Error rate is {{`{{ $value | humanizePercentage }}`}}"
 
     - name: ml-platform.availability
       rules:
