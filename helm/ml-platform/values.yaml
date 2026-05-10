@@ -66,3 +66,10 @@ probes:
 
 gpu:
   enabled: false
+
+track: stable
+
+# Shared canary service — selects ALL ml-platform pods regardless of release.
+# Enable on the stable release only; controls 80/20 split via replica count.
+sharedService:
+  enabled: false

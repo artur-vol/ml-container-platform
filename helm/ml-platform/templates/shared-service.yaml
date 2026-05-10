@@ -1,0 +1,19 @@
+{{- if .Values.sharedService.enabled }}
+# Shared canary gateway — selects pods from ALL releases with this chart name.
+# Traffic split is controlled by replica count (e.g. 4 stable + 1 canary = 80/20).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ml-platform.name" . }}-canary-gateway
+  labels:
+    {{- include "ml-platform.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "ml-platform.name" . }}
+{{- end }}

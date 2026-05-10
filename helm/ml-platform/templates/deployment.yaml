@@ -13,6 +13,7 @@ spec:
     metadata:
       labels:
         {{- include "ml-platform.selectorLabels" . | nindent 8 }}
+        track: {{ .Values.track | default "stable" }}
     spec:
       securityContext:
         runAsNonRoot: true
