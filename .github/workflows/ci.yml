@@ -12,6 +12,9 @@ env:
 jobs:
   build-and-test:
     runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
