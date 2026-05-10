@@ -1,0 +1,64 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ml-platform-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: ml-platform
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  groups:
+    - name: ml-platform.latency
+      rules:
+        - alert: HighPredictLatencyP95
+          expr: |
+            histogram_quantile(0.95,
+              rate(ml_predict_latency_seconds_bucket[5m])
+            ) > 1.0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "p95 predict latency > 1s"
+            description: "p95 latency is {{ $value | humanizeDuration }} — model may be overloaded"
+
+        - alert: HighPredictLatencyP99
+          expr: |
+            histogram_quantile(0.99,
+              rate(ml_predict_latency_seconds_bucket[5m])
+            ) > 3.0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "p99 predict latency > 3s"
+            description: "p99 latency is {{ $value | humanizeDuration }}"
+
+    - name: ml-platform.errors
+      rules:
+        - alert: HighPredictErrorRate
+          expr: |
+            rate(ml_predict_requests_total{status=~"bad_request|error"}[5m])
+              /
+            rate(ml_predict_requests_total[5m])
+            > 0.05
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Predict error rate > 5%"
+            description: "Error rate is {{ $value | humanizePercentage }}"
+
+    - name: ml-platform.availability
+      rules:
+        - alert: ServePodDown
+          expr: |
+            absent(up{job="ml-platform"}) == 1
+              or
+            up{job="ml-platform"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ml-platform serve pod is down"
+            description: "No healthy serve pod has been scraped for 1 minute"

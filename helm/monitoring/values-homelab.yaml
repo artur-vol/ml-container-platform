@@ -1,0 +1,59 @@
+# monitoring/values-homelab.yaml — tight limits for Asus homelab (8 GB RAM, HDD)
+
+kube-prometheus-stack:
+  prometheus:
+    prometheusSpec:
+      retention: 4h   # short retention, HDD is slow
+      resources:
+        requests:
+          cpu: 100m
+          memory: 200Mi
+        limits:
+          cpu: 500m
+          memory: 400Mi
+
+  grafana:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 80Mi
+      limits:
+        cpu: 200m
+        memory: 150Mi
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+
+  prometheusOperator:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  nodeExporter:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 50m
+        memory: 50Mi
+
+  kube-state-metrics:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi

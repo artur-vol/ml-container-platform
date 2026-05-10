@@ -1,0 +1,52 @@
+# monitoring/values.yaml — base config (overridden per environment)
+
+# Target namespace where ml-platform is running
+mlPlatformNamespace: ml-platform
+
+kube-prometheus-stack:
+  # Disable k8s control-plane scrapers — k3s embeds them, endpoints won't exist
+  kubeApiServer:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeEtcd:
+    enabled: false
+  kubeProxy:
+    enabled: false
+
+  prometheus:
+    prometheusSpec:
+      # Discover ServiceMonitors from ALL namespaces
+      serviceMonitorSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      serviceMonitorNamespaceSelector: {}
+      # Discover PrometheusRules from all namespaces
+      ruleSelectorNilUsesHelmValues: false
+      ruleSelector: {}
+      ruleNamespaceSelector: {}
+      retention: 24h
+      scrapeInterval: 15s
+
+  grafana:
+    adminPassword: admin
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+        searchNamespace: ALL
+    grafana.ini:
+      server:
+        root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
+
+  alertmanager:
+    alertmanagerSpec:
+      replicas: 1
+
+  # Keep node-exporter and kube-state-metrics enabled for pod CPU/memory panels
+  nodeExporter:
+    enabled: true
+  kubeStateMetrics:
+    enabled: true

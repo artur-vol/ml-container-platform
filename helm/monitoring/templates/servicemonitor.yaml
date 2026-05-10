@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ml-platform
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: ml-platform
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.mlPlatformNamespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ml-platform
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

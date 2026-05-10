@@ -25,6 +25,12 @@ SERVE_IMAGE="${SERVE_IMAGE:-ml-platform/serve:latest}"
 SERVE_CONTAINER="${SERVE_CONTAINER:-ml-platform-serve}"
 SERVE_PORT="${SERVE_PORT:-8000}"
 
+KUBECONFIG="${KUBECONFIG:-$HOME/k3s.yaml}"
+K8S_NS="${K8S_NS:-ml-platform}"
+MONITORING_NS="${MONITORING_NS:-monitoring}"
+MONITORING_CHART="$REPO_ROOT/helm/monitoring"
+GRAFANA_PORT="${GRAFANA_PORT:-3000}"
+
 log()  { printf '\033[1;34m[ops]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[ops]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[ops]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -191,6 +197,30 @@ cmd_smoke_test() {
       -d "$payload" && echo
 }
 
+cmd_monitoring_deploy() {
+  log "updating helm dependencies for monitoring chart"
+  helm dependency update "$MONITORING_CHART"
+  log "deploying monitoring stack to namespace $MONITORING_NS"
+  KUBECONFIG="$KUBECONFIG" helm upgrade --install monitoring "$MONITORING_CHART" \
+    -f "$MONITORING_CHART/values.yaml" \
+    -f "$MONITORING_CHART/values-homelab.yaml" \
+    --namespace "$MONITORING_NS" --create-namespace \
+    --timeout 5m \
+    "$@"
+  log "monitoring stack deployed — use './ops.sh monitoring-status' to check pods"
+}
+
+cmd_monitoring_status() {
+  KUBECONFIG="$KUBECONFIG" kubectl get pods -n "$MONITORING_NS"
+}
+
+cmd_monitoring_open() {
+  log "port-forwarding Grafana to http://127.0.0.1:${GRAFANA_PORT}  (admin/admin)"
+  KUBECONFIG="$KUBECONFIG" kubectl port-forward \
+    svc/monitoring-grafana "$GRAFANA_PORT:80" \
+    -n "$MONITORING_NS"
+}
+
 cmd_clean() {
   if docker ps -a --format '{{.Names}}' | grep -qx "$SERVE_CONTAINER"; then
     log "removing $SERVE_CONTAINER"
@@ -210,7 +240,10 @@ Usage: ./ops.sh <command>
   build         Build train and serve Docker images.
   run           Start the serve container on :${SERVE_PORT} (requires 'build').
   smoke-test    curl /health then /predict with tests/test_image.jpg.
-  clean         Stop the serve container and the MLflow server.
+  clean              Stop the serve container and the MLflow server.
+  monitoring-deploy  Install / upgrade Prometheus + Grafana stack via Helm.
+  monitoring-status  Show pod status in the monitoring namespace.
+  monitoring-open    kubectl port-forward Grafana to :${GRAFANA_PORT} (admin/admin).
 USAGE
 }
 
@@ -224,8 +257,11 @@ main() {
     promote)        cmd_promote "$@" ;;
     build)          cmd_build "$@" ;;
     run)            cmd_run "$@" ;;
-    smoke-test)     cmd_smoke_test "$@" ;;
-    clean)          cmd_clean "$@" ;;
+    smoke-test)          cmd_smoke_test "$@" ;;
+    clean)               cmd_clean "$@" ;;
+    monitoring-deploy)   cmd_monitoring_deploy "$@" ;;
+    monitoring-status)   cmd_monitoring_status "$@" ;;
+    monitoring-open)     cmd_monitoring_open "$@" ;;
     -h|--help|help) usage ;;
     *) usage; die "unknown command: $cmd" ;;
   esac
