@@ -1,3 +1,16 @@
+# Tailscale proxy — bridges GKE Autopilot pods to homelab MLflow over Tailscale VPN.
+#
+# Two containers share the pod network namespace:
+#   tailscale  — joins the Tailscale network in userspace mode (TS_USERSPACE=true).
+#                Userspace mode is required because GKE Autopilot forbids NET_ADMIN
+#                capability and hostPath /dev/net/tun that kernel mode needs.
+#                Exposes a SOCKS5 proxy at 127.0.0.1:1055.
+#   proxy      — gost forwards TCP :5000 through the SOCKS5 proxy to the homelab
+#                Tailscale IP. socat was the original choice but speaks SOCKS4 only;
+#                gost supports SOCKS5 natively.
+#
+# The Service 'mlflow-proxy' makes port 5000 reachable cluster-wide so serve pods
+# can use trackingUri: http://mlflow-proxy:5000 without knowing the Tailscale topology.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,18 +26,9 @@ spec:
       labels:
         app: tailscale-mlflow-proxy
     spec:
-      initContainers:
-      - name: enable-ip-forward
-        image: busybox
-        securityContext:
-          privileged: true
-        command: ["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"]
       containers:
       - name: tailscale
         image: tailscale/tailscale:stable
-        securityContext:
-          capabilities:
-            add: ["NET_ADMIN"]
         env:
         - name: TS_AUTHKEY
           valueFrom:
@@ -32,23 +36,22 @@ spec:
               name: tailscale-auth
               key: authkey
         - name: TS_USERSPACE
-          value: "false"
+          value: "true"
         - name: TS_STATE_DIR
           value: /tmp/tailscale
-        volumeMounts:
-        - name: dev-net-tun
-          mountPath: /dev/net/tun
-      - name: socat
-        image: alpine/socat
-        command:
-        - socat
-        - TCP-LISTEN:5000,fork,reuseaddr
-        - TCP:100.75.117.56:5000
-      volumes:
-      - name: dev-net-tun
-        hostPath:
-          path: /dev/net/tun
-          type: CharDevice
+        # Disable Kubernetes Secret storage for Tailscale state — the pod
+        # lacks RBAC permissions to read/write Secrets in this namespace.
+        - name: TS_KUBE_SECRET
+          value: ""
+        - name: TS_SOCKS5_SERVER
+          value: "127.0.0.1:1055"
+      - name: proxy
+        image: gogost/gost:latest
+        args:
+        - "-L"
+        - "tcp://:5000/100.75.117.56:5000"
+        - "-F"
+        - "socks5://127.0.0.1:1055"
 ---
 apiVersion: v1
 kind: Service

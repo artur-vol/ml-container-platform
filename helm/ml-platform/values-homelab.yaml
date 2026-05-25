@@ -1,19 +1,6 @@
-# values-homelab.yaml — k3s on Asus (i5-6200U, 8 GB RAM, GeForce 940M, Ubuntu 24.04, amd64)
-#
-# Usage (on homelab or from dev machine with KUBECONFIG set):
-#   helm upgrade --install ml-platform helm/ml-platform \
-#     -f helm/ml-platform/values.yaml \
-#     -f helm/ml-platform/values-homelab.yaml \
-#     --namespace ml-platform --create-namespace
-#
-# MLflow is expected to run on the homelab host outside the cluster.
-# Replace HOMELAB_IP with the LAN IP of the Asus (e.g. 192.168.1.100):
-#   helm upgrade ... --set mlflow.trackingUri=http://192.168.1.100:5000
-
 replicaCount: 4
 
 image:
-  # Image pushed to ghcr.io by CI; arm64 not needed here — homelab is amd64
   repository: ghcr.io/artur-vol/ml-container-platform-serve
   tag: latest
   pullPolicy: Always
@@ -22,8 +9,6 @@ image:
 mlflow:
   trackingUri: "http://192.168.0.100:5000"
 
-# 8 GB RAM constraint: keep requests tight, limits slightly higher
-# These are the same as defaults but explicit here for the thesis record
 resources:
   requests:
     cpu: 100m
@@ -32,15 +17,11 @@ resources:
     cpu: 1000m
     memory: 512Mi
 
-# GPU inference (GeForce 940M, 2 GB VRAM)
-# Enable after nvidia-device-plugin is installed on k3s:
-#   kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.14.3/nvidia-device-plugin.yml
 gpu:
   enabled: false
 
 track: stable
 
-# Enable shared service on stable release to mix stable + canary traffic
 sharedService:
   enabled: true
   type: NodePort

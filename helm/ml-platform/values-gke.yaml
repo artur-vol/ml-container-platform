@@ -1,20 +1,3 @@
-# values-gke.yaml — GKE Autopilot stub (budget ≤50€, final demo only)
-#
-# Usage:
-#   gcloud container clusters get-credentials <cluster> --region <region>
-#   helm upgrade --install ml-platform helm/ml-platform \
-#     -f helm/ml-platform/values.yaml \
-#     -f helm/ml-platform/values-gke.yaml \
-#     --namespace ml-platform --create-namespace
-#
-# GKE Autopilot auto-provisions nodes; nginx ingress must be installed first:
-#   helm upgrade --install ingress-nginx ingress-nginx \
-#     --repo https://kubernetes.github.io/ingress-nginx \
-#     --namespace ingress-nginx --create-namespace
-#
-# MLflow should be deployed inside the cluster (or Cloud SQL + GCS) for GKE.
-# Stub — configure before week-7 cloud deploy.
-
 image:
   repository: ghcr.io/artur-vol/ml-container-platform-serve
   tag: latest
@@ -22,10 +5,8 @@ image:
   pullSecret: "ghcr-secret"
 
 mlflow:
-  # MLflow on homelab, reachable via tailscale-mlflow-proxy in-cluster service
   trackingUri: "http://mlflow-proxy:5000"
 
-# GKE Autopilot: requests drive node provisioning cost; stay conservative
 resources:
   requests:
     cpu: 250m
@@ -35,12 +16,11 @@ resources:
     memory: 1Gi
 
 gpu:
-  enabled: false  # GKE Autopilot GPU nodes require explicit node pool — out of budget
+  enabled: false
 
-# GKE provides a real load balancer IP; use a real domain or nip.io for the demo
 ingress:
   enabled: true
   className: nginx
-  host: ml-platform.EXTERNAL_IP.nip.io   # replace EXTERNAL_IP after ingress-nginx install
+  host: ml-platform.34.140.149.36.nip.io
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"

@@ -19,9 +19,13 @@ resource "google_container_cluster" "ml_platform" {
   location   = var.region
   depends_on = [google_project_service.container]
 
-  enable_autopilot    = true
+  enable_autopilot = true
+
+  # deletion_protection=false allows `terraform destroy` without a manual step.
+  # Acceptable for a short-lived thesis demo; never disable in production.
   deletion_protection = false
 
+  # Required for Autopilot — enables VPC-native networking (alias IPs).
   ip_allocation_policy {}
 }
 
