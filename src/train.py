@@ -1,4 +1,15 @@
-"""Fine-tune MobileNetV2 on CIFAR-10 and register the result in MLflow."""
+"""Fine-tune MobileNetV2 on CIFAR-10 and register the result in MLflow.
+
+Pipeline:
+  1. Download CIFAR-10 (cached after first run).
+  2. Load MobileNetV2 with ImageNet weights; replace the classifier head for 10 classes.
+  3. Train for N epochs, logging metrics to MLflow after each epoch.
+  4. Measure single-image inference latency.
+  5. Register the trained model in the MLflow model registry as 'cifar10-mobilenet'.
+
+The registered model is later promoted to Production by scripts/promote.py,
+then loaded by src/serve.py at container startup.
+"""
 from __future__ import annotations
 
 import os
@@ -23,14 +34,19 @@ DATA_DIR = Path(os.environ.get("CIFAR_DATA_DIR", "./data"))
 
 
 def build_model(num_classes: int = 10) -> nn.Module:
+    # Start from ImageNet-pretrained weights — fine-tuning converges much faster
+    # than training from scratch, which matters given the homelab time budget.
     weights = MobileNet_V2_Weights.IMAGENET1K_V2
     model = mobilenet_v2(weights=weights)
+    # Replace only the final classification layer; all other weights are reused.
     in_features = model.classifier[-1].in_features
     model.classifier[-1] = nn.Linear(in_features, num_classes)
     return model
 
 
 def build_loaders(batch_size: int, subset: int | None, num_workers: int):
+    # Training transform includes random horizontal flip for basic augmentation.
+    # Eval transform is deterministic — no augmentation during validation.
     train_tf = transforms.Compose([
         transforms.Resize(96),
         transforms.RandomHorizontalFlip(),
@@ -46,6 +62,8 @@ def build_loaders(batch_size: int, subset: int | None, num_workers: int):
     train_set = datasets.CIFAR10(str(DATA_DIR), train=True, download=True, transform=train_tf)
     test_set = datasets.CIFAR10(str(DATA_DIR), train=False, download=True, transform=eval_tf)
     if subset is not None:
+        # --subset limits training to the first N samples and validation to N/5
+        # (min 200) so CI runs finish in under a minute on the homelab HDD.
         train_set = Subset(train_set, range(min(subset, len(train_set))))
         test_set = Subset(test_set, range(min(max(subset // 5, 200), len(test_set))))
     train_loader = DataLoader(
@@ -103,6 +121,7 @@ def main(epochs, subset, batch_size, lr, num_workers, tracking_uri, experiment, 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     with mlflow.start_run() as run:
+        # Log all hyperparameters upfront so each run is fully reproducible.
         mlflow.log_params({
             "epochs": epochs,
             "subset": subset if subset is not None else "full",
@@ -114,6 +133,7 @@ def main(epochs, subset, batch_size, lr, num_workers, tracking_uri, experiment, 
         })
 
         for epoch in range(epochs):
+            # --- training loop ---
             model.train()
             running_loss, running_correct, running_total = 0.0, 0, 0
             for step, (x, y) in enumerate(train_loader):
@@ -132,6 +152,7 @@ def main(epochs, subset, batch_size, lr, num_workers, tracking_uri, experiment, 
             train_acc = running_correct / max(running_total, 1)
             eval_metrics = evaluate(model, test_loader, device, criterion)
 
+            # val_accuracy is read by scripts/promote.py for the quality gate check.
             mlflow.log_metric("train_loss", train_loss, step=epoch)
             mlflow.log_metric("train_accuracy", train_acc, step=epoch)
             mlflow.log_metric("val_loss", eval_metrics["loss"], step=epoch)
@@ -144,7 +165,9 @@ def main(epochs, subset, batch_size, lr, num_workers, tracking_uri, experiment, 
                 f"latency={eval_metrics['latency_ms_per_batch']:.1f}ms/batch"
             )
 
-        # single-image latency, the metric the serving stack will be judged against
+        # --- single-image latency benchmark ---
+        # Measured separately from batch evaluation because serve.py processes
+        # one image at a time. 3 warmup runs discard JIT compilation overhead.
         model.eval()
         sample = next(iter(test_loader))[0][:1].to(device)
         with torch.no_grad():
@@ -160,6 +183,7 @@ def main(epochs, subset, batch_size, lr, num_workers, tracking_uri, experiment, 
         mlflow.set_tag("classes", ",".join(CIFAR10_CLASSES))
 
         if register:
+            # Move model to CPU before saving — the serving container may not have a GPU.
             mlflow.pytorch.log_model(
                 pytorch_model=model.cpu(),
                 artifact_path="model",

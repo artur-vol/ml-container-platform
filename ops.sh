@@ -221,6 +221,61 @@ cmd_monitoring_open() {
     -n "$MONITORING_NS"
 }
 
+cmd_canary_loadtest() {
+  local loop=false
+  [[ "${1:-}" == "--loop" ]] && loop=true
+
+  local node_ip nodeport
+  node_ip=$(KUBECONFIG="$KUBECONFIG" kubectl get nodes \
+    -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+  nodeport=$(KUBECONFIG="$KUBECONFIG" kubectl -n "$K8S_NS" \
+    get svc ml-platform-canary-gateway \
+    -o jsonpath='{.spec.ports[0].nodePort}')
+  local url="http://${node_ip}:${nodeport}/predict"
+  log "canary gateway: $url"
+
+  local img="$REPO_ROOT/tests/test_image.jpg"
+  if [[ ! -f "$img" ]]; then
+    log "generating test image with python3"
+    python3 -c "
+import struct, zlib
+def png_chunk(t, d): c = zlib.crc32(t+d)&0xffffffff; return struct.pack('>I',len(d))+t+d+struct.pack('>I',c)
+raw = (b'\x00'+b'\xff\x00\x00'*32)*32
+data = b'\x89PNG\r\n\x1a\n'
+data += png_chunk(b'IHDR', struct.pack('>IIBBBBB',32,32,8,2,0,0,0))
+data += png_chunk(b'IDAT', zlib.compress(raw))
+data += png_chunk(b'IEND', b'')
+open('$img','wb').write(data)
+"
+  fi
+  local img_b64 payload
+  img_b64=$(base64 < "$img" | tr -d '\n')
+  payload="{\"image_b64\": \"$img_b64\"}"
+
+  local batch=200
+  $loop && batch=50 && log "continuous mode (50 req every 10s) — Ctrl+C to stop" \
+         || log "sending $batch /predict requests — watch Grafana Canary Split panel…"
+
+  while true; do
+    local ok=0 fail=0
+    for i in $(seq 1 "$batch"); do
+      if curl -fsS -o /dev/null \
+          -X POST "$url" \
+          -H "Content-Type: application/json" \
+          -d "$payload"; then
+        ok=$((ok + 1))
+      else
+        fail=$((fail + 1))
+      fi
+      printf '.'
+    done
+    echo " ${ok} ok / ${fail} fail"
+    $loop || break
+    sleep 10
+  done
+  log "done — check Grafana Canary Split panel for 80/20 split"
+}
+
 cmd_clean() {
   if docker ps -a --format '{{.Names}}' | grep -qx "$SERVE_CONTAINER"; then
     log "removing $SERVE_CONTAINER"
@@ -244,6 +299,7 @@ Usage: ./ops.sh <command>
   monitoring-deploy  Install / upgrade Prometheus + Grafana stack via Helm.
   monitoring-status  Show pod status in the monitoring namespace.
   monitoring-open    kubectl port-forward Grafana to :${GRAFANA_PORT} (admin/admin).
+  canary-loadtest    Send 200 /predict requests through the canary gateway; shows 80/20 split in Grafana.
 USAGE
 }
 
@@ -262,6 +318,7 @@ main() {
     monitoring-deploy)   cmd_monitoring_deploy "$@" ;;
     monitoring-status)   cmd_monitoring_status "$@" ;;
     monitoring-open)     cmd_monitoring_open "$@" ;;
+    canary-loadtest)     cmd_canary_loadtest "$@" ;;
     -h|--help|help) usage ;;
     *) usage; die "unknown command: $cmd" ;;
   esac

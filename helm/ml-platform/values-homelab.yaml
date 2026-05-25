@@ -10,16 +10,17 @@
 # Replace HOMELAB_IP with the LAN IP of the Asus (e.g. 192.168.1.100):
 #   helm upgrade ... --set mlflow.trackingUri=http://192.168.1.100:5000
 
+replicaCount: 4
+
 image:
   # Image pushed to ghcr.io by CI; arm64 not needed here — homelab is amd64
   repository: ghcr.io/artur-vol/ml-container-platform-serve
   tag: latest
   pullPolicy: Always
-  pullSecret: ""
+  pullSecret: "ghcr-secret"
 
 mlflow:
-  # Set via --set at deploy time or update with homelab LAN IP
-  trackingUri: "http://HOMELAB_IP:5000"
+  trackingUri: "http://192.168.0.100:5000"
 
 # 8 GB RAM constraint: keep requests tight, limits slightly higher
 # These are the same as defaults but explicit here for the thesis record
@@ -42,3 +43,5 @@ track: stable
 # Enable shared service on stable release to mix stable + canary traffic
 sharedService:
   enabled: true
+  type: NodePort
+  nodePort: 30800

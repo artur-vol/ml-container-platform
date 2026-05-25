@@ -8,12 +8,15 @@ metadata:
   labels:
     {{- include "ml-platform.labels" . | nindent 4 }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.sharedService.type | default "ClusterIP" }}
   ports:
     - port: 80
       targetPort: 8000
       protocol: TCP
       name: http
+      {{- if .Values.sharedService.nodePort }}
+      nodePort: {{ .Values.sharedService.nodePort }}
+      {{- end }}
   selector:
     app.kubernetes.io/name: {{ include "ml-platform.name" . }}
 {{- end }}

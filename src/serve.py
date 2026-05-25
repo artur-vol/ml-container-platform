@@ -1,4 +1,14 @@
-"""FastAPI inference service for the registered cifar10-mobilenet model."""
+"""FastAPI inference service for the registered cifar10-mobilenet model.
+
+Lifecycle: model is loaded from MLflow once at startup and held in memory.
+All subsequent /predict calls run inference against that in-memory model
+without contacting MLflow again.
+
+Endpoints:
+  POST /predict  — base64 JPEG → {class_name, confidence, latency_ms}
+  GET  /health   — liveness/readiness probe for Kubernetes
+  GET  /metrics  — Prometheus metrics (request counter + latency histogram)
+"""
 from __future__ import annotations
 
 import base64
@@ -24,17 +34,25 @@ from torchvision import transforms
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("serve")
 
-Image.MAX_IMAGE_PIXELS = 25_000_000  # decompression-bomb guard (~25 megapixels)
-MAX_IMAGE_BYTES = 5 * 1024 * 1024    # 5 MB decoded limit
+# Pillow decompression-bomb guard: reject images that expand beyond ~25 MP in memory.
+Image.MAX_IMAGE_PIXELS = 25_000_000
+# Reject encoded payloads larger than 5 MB before even attempting to decode.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+# Output label set for CIFAR-10 — order must match the training class indices.
 CIFAR10_CLASSES = (
     "airplane", "automobile", "bird", "cat", "deer",
     "dog", "frog", "horse", "ship", "truck",
 )
+
+# Configurable via env vars so the same image works in all environments.
 MODEL_NAME = os.environ.get("MODEL_NAME", "cifar10-mobilenet")
 MODEL_STAGE = os.environ.get("MODEL_STAGE", "Production")
 TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
+# Prometheus metrics defined at module level so they survive across requests.
+# The `track` label (stable/canary) is added automatically by Prometheus via
+# pod-label relabeling in the ServiceMonitor — not set here in application code.
 PREDICT_COUNTER = Counter(
     "ml_predict_requests_total", "Total /predict requests", ["status"]
 )
@@ -42,6 +60,8 @@ PREDICT_LATENCY = Histogram(
     "ml_predict_latency_seconds", "End-to-end /predict latency in seconds"
 )
 
+# Preprocessing pipeline must match exactly what was used during training:
+# resize to 96×96, convert to tensor, normalise with ImageNet channel stats.
 PREPROCESS = transforms.Compose([
     transforms.Resize((96, 96)),
     transforms.ToTensor(),
@@ -69,12 +89,15 @@ def _load_model() -> torch.nn.Module:
         # Registry may have no Production version yet (pre-promote); fall back to latest.
         logger.warning("%s not available (%s); falling back to %s", uri, exc, fallback_uri)
         model = mlflow.pytorch.load_model(fallback_uri)
+    # Switch to eval mode: disables dropout and batch-norm training behaviour.
     model.eval()
     return model
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Load model once at startup and store on app.state so all request handlers
+    # share the same in-memory instance without reloading from MLflow each time.
     app.state.model = _load_model()
     app.state.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     app.state.model.to(app.state.device)
@@ -98,6 +121,8 @@ def metrics():
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
     t0 = time.perf_counter()
+
+    # --- input validation ---
     try:
         raw = base64.b64decode(req.image_b64, validate=True)
         if len(raw) > MAX_IMAGE_BYTES:
@@ -111,9 +136,11 @@ def predict(req: PredictRequest):
         logger.warning("bad request: %s", exc)
         raise HTTPException(status_code=400, detail="invalid image payload")
 
+    # --- inference ---
+    # unsqueeze(0) adds the batch dimension: (C, H, W) → (1, C, H, W)
     tensor = PREPROCESS(image).unsqueeze(0).to(app.state.device)
     try:
-        with torch.no_grad():
+        with torch.no_grad():  # disable gradient tracking — not needed for inference
             logits = app.state.model(tensor)
             probs = torch.softmax(logits, dim=1)[0]
             confidence, idx = torch.max(probs, dim=0)
