@@ -22,8 +22,8 @@ image:
   pullSecret: "ghcr-secret"
 
 mlflow:
-  # MLflow runs on homelab; reachable from GKE via Tailscale (100.75.117.56)
-  trackingUri: "http://100.75.117.56:5000"
+  # MLflow on homelab, reachable via tailscale-mlflow-proxy in-cluster service
+  trackingUri: "http://mlflow-proxy:5000"
 
 # GKE Autopilot: requests drive node provisioning cost; stay conservative
 resources:

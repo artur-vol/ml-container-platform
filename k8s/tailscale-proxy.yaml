@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailscale-mlflow-proxy
+  namespace: ml-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tailscale-mlflow-proxy
+  template:
+    metadata:
+      labels:
+        app: tailscale-mlflow-proxy
+    spec:
+      initContainers:
+      - name: enable-ip-forward
+        image: busybox
+        securityContext:
+          privileged: true
+        command: ["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"]
+      containers:
+      - name: tailscale
+        image: tailscale/tailscale:stable
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+        env:
+        - name: TS_AUTHKEY
+          valueFrom:
+            secretKeyRef:
+              name: tailscale-auth
+              key: authkey
+        - name: TS_USERSPACE
+          value: "false"
+        - name: TS_STATE_DIR
+          value: /tmp/tailscale
+        volumeMounts:
+        - name: dev-net-tun
+          mountPath: /dev/net/tun
+      - name: socat
+        image: alpine/socat
+        command:
+        - socat
+        - TCP-LISTEN:5000,fork,reuseaddr
+        - TCP:100.75.117.56:5000
+      volumes:
+      - name: dev-net-tun
+        hostPath:
+          path: /dev/net/tun
+          type: CharDevice
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-proxy
+  namespace: ml-platform
+spec:
+  selector:
+    app: tailscale-mlflow-proxy
+  ports:
+  - port: 5000
+    targetPort: 5000
