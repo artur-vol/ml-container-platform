@@ -1,29 +1,70 @@
 {
-  "title": "ML Platform — Inference Metrics",
+  "title": "ML Platform \u2014 Inference Metrics",
   "uid": "ml-platform-v1",
   "version": 1,
   "schemaVersion": 39,
   "timezone": "browser",
   "refresh": "10s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "type": "timeseries",
       "title": "Request Rate (req/min)",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
-        "defaults": { "unit": "reqpm", "min": 0 }
+        "defaults": {
+          "unit": "reqpm",
+          "min": 0
+        }
       },
       "targets": [
         {
-          "expr": "rate(ml_predict_requests_total{status=\"ok\"}[1m]) * 60",
-          "legendFormat": "{{pod}} — ok"
+          "expr": "sum by (pod) (rate(ml_predict_requests_total{status=\"ok\"}[1m]) * 60)",
+          "legendFormat": "{{pod}} \u2014 ok"
         },
         {
-          "expr": "rate(ml_predict_requests_total{status=~\"bad_request|error\"}[1m]) * 60",
-          "legendFormat": "{{pod}} — {{status}}"
+          "expr": "sum by (pod, status) (rate(ml_predict_requests_total{status=~\"bad_request|error\"}[1m]) * 60)",
+          "legendFormat": "{{pod}} \u2014 {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Canary Split (req/min)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (track) (rate(ml_predict_requests_total{status=\"ok\"}[1m]) * 60)",
+          "legendFormat": "{{track}}"
         }
       ]
     },
@@ -31,42 +72,64 @@
       "id": 2,
       "type": "timeseries",
       "title": "Error Rate (req/min)",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "reqpm",
           "min": 0,
-          "color": { "mode": "fixed", "fixedColor": "red" }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
         }
       },
       "targets": [
         {
           "expr": "rate(ml_predict_requests_total{status=~\"bad_request|error\"}[1m]) * 60",
-          "legendFormat": "{{pod}} — {{status}}"
+          "legendFormat": "{{pod}} \u2014 {{status}}"
         }
       ]
     },
     {
       "id": 3,
       "type": "timeseries",
-      "title": "Predict Latency — p50 / p95 / p99 (ms)",
-      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "title": "Predict Latency \u2014 p50 / p95 / p99 (ms)",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
-        "defaults": { "unit": "ms", "min": 0 }
+        "defaults": {
+          "unit": "ms",
+          "min": 0
+        }
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(ml_predict_latency_seconds_bucket[2m])) * 1000",
+          "expr": "histogram_quantile(0.50, sum by (pod, le) (rate(ml_predict_latency_seconds_bucket[2m]))) * 1000",
           "legendFormat": "{{pod}} p50"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(ml_predict_latency_seconds_bucket[2m])) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (pod, le) (rate(ml_predict_latency_seconds_bucket[2m]))) * 1000",
           "legendFormat": "{{pod}} p95"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(ml_predict_latency_seconds_bucket[2m])) * 1000",
+          "expr": "histogram_quantile(0.99, sum by (pod, le) (rate(ml_predict_latency_seconds_bucket[2m]))) * 1000",
           "legendFormat": "{{pod}} p99"
         }
       ]
@@ -75,10 +138,21 @@
       "id": 4,
       "type": "timeseries",
       "title": "Pod CPU Usage",
-      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
-        "defaults": { "unit": "percentunit", "min": 0 }
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        }
       },
       "targets": [
         {
@@ -91,14 +165,56 @@
       "id": 5,
       "type": "timeseries",
       "title": "Pod Memory Usage (MiB)",
-      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
-        "defaults": { "unit": "mebibytes", "min": 0 }
+        "defaults": {
+          "unit": "mebibytes",
+          "min": 0
+        }
       },
       "targets": [
         {
           "expr": "container_memory_working_set_bytes{namespace=\"ml-platform\", container=\"serve\"} / 1024 / 1024",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Pod Restarts",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"ml-platform\", container=\"serve\"}[5m])",
           "legendFormat": "{{pod}}"
         }
       ]
