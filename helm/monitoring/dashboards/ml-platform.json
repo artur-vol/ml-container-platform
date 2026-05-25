@@ -94,7 +94,7 @@
       },
       "targets": [
         {
-          "expr": "rate(ml_predict_requests_total{status=~\"bad_request|error\"}[1m]) * 60",
+          "expr": "(rate(ml_predict_requests_total{status=~\"bad_request|error\"}[1m]) OR vector(0)) * 60",
           "legendFormat": "{{pod}} \u2014 {{status}}"
         }
       ]
