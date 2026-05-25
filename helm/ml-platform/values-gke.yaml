@@ -19,11 +19,11 @@ image:
   repository: ghcr.io/artur-vol/ml-container-platform-serve
   tag: latest
   pullPolicy: Always
-  pullSecret: ""
+  pullSecret: "ghcr-secret"
 
 mlflow:
-  # TODO week 7: point to in-cluster MLflow service or managed instance
-  trackingUri: "http://mlflow.ml-platform.svc.cluster.local:5000"
+  # MLflow runs on homelab; reachable from GKE via Tailscale (100.75.117.56)
+  trackingUri: "http://100.75.117.56:5000"
 
 # GKE Autopilot: requests drive node provisioning cost; stay conservative
 resources:
